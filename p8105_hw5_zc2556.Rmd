@@ -33,70 +33,82 @@ scale_fill_discrete = scale_fill_viridis_d
 
 ```
 
-### Basic Description of the Data Set
+### Import and Clean the Data Set
 
 ```{r}
 #read in the dataset
 homoicide = 
-  read_csv("./homicide-data.csv")
-```
-
-The data contains `r nrow(instacart)` rows and `r ncol(instacart)` columns. Each observations are assigned with the number of items and user ID. We have information about order/order ID, days and hours. Also, we have item information, like name, aisle, department and codes.
-
-
-### Answering Questions
-
-#### Aisles
-
-```{r}
-#count for the number of aisles and find the most popular aisle
-instacart %>%
-  count(aisle) %>%
-  arrange(desc(n))
-```
-We can see there are 134 different aisles and "fresh vegetables" has the most items.
-
-#### Plot
-
-```{r}
-instacart %>%
-  count(aisle) %>%
-  filter(n > 10000) %>%
+  read_csv("./homicide-data.csv") %>%
+  #redefine the arrest status
   mutate(
-    aisle = factor(aisle),
-    aisle = fct_reorder(aisle, n) #rearrange the frame
+    city_state = str_c(city, state, sep = "_"),
+    resolved = case_when(
+      disposition == "Closed without arrest" ~ "unsolved",
+      disposition == "Open/No arrest"        ~ "unsolved",
+      disposition == "Closed by arrest"      ~ "solved"
+    )
   ) %>%
-  ggplot(aes(x = aisle, y = n))+
-  geom_point()+
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+  select(
+    city_state,resolved
+  ) %>%
+  filter(city_state != "Tulsa_AL")
 ```
 
-#### Make a Table of Targeted Aisles
+Check the data set
 
 ```{r}
-instacart %>%
-  filter( aisle %in% c("baking ingredients", "dog food care","packaged vegetables fruits"))%>%
-  group_by(aisle)%>%
-  count(product_name)%>%
-  mutate(
-    rank = min_rank(desc(n))
-  )%>%
-  filter(rank < 4) %>%
-  arrange(aisle, rank)%>%
-  knitr::kable()
-```
-
-#### Make a Table Showing the Mean Hour of the Day between "Apples" and "Ice Cream"
-
-```{r}
-instacart %>%
-  filter(product_name %in% c("Pink Lady Apples", "Coffee Ice Cream")) %>%
-  group_by(product_name, order_dow)%>%
-  summarise(mean_hour = mean(order_hour_of_day))%>%
-  pivot_wider(
-    names_from = order_dow,
-    values_from = mean_hour
+#give a tidy data frame including the solved/unsolved cases 
+aggregate_homo = 
+  homoicide %>%
+  group_by(city_state) %>%
+  summarize(
+    hom_total = n(),
+    hom_unsolved = sum(resolved == "unsolved")
   )
+aggregate_homo
+```
+
+Prop test for a single city
+
+```{r}
+prop.test(
+  aggregate_homo %>% filter(city_state == "Baltimore_MD") %>% pull(hom_unsolved),
+  aggregate_homo %>% filter(city_state == "Baltimore_MD") %>% pull(hom_total)
+  ) %>%
+  broom::tidy() #make it exhibit in one row
+  
+```
+
+Iterate
+
+```{r}
+#using map to give prop tests of each city state
+results =
+  aggregate_homo %>%
+  mutate(
+    prop_test = map2(.x = hom_unsolved, .y = hom_total, ~prop.test(x = .x, n = .y)),
+    tidy_test = map(.x = prop_test, ~broom::tidy(.x))
+  ) %>%
+  select(
+    -prop_test
+  ) %>%
+  unnest(tidy_test) %>%
+  select(
+    city_state, estimate, conf.low, conf.high
+  )
+results
+```
+
+Plot
+
+```{r}
+results %>%
+  mutate(city_state = fct_reorder(city_state, estimate)) %>%
+  ggplot(aes(x = city_state, y = estimate)) +
+  geom_point()+
+  geom_errorbar(ymin = results$conf.low, ymax = results$conf.high)+
+  theme(axis.text = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
 ```
 
 
@@ -105,46 +117,19 @@ instacart %>%
 ### Import and Clean the Data
 
 ```{r}
-accel =
-  read.csv("./accel_data.csv")%>% #import data 
-  pivot_longer(
-    activity.1:activity.1440,
-    values_to = "Measures",
-    names_to = "Activity_Minute",
-    names_prefix = "activity."
-  )%>% # merging vairables
-  rename(
-    Day = day,
-    Week = week,
-    Day_Number = day_id
-  )%>% # change to more reasonable vairable names.
-  mutate(
-    Weekday_or_Weekend =
-      case_when(
-        Day %in% c("Monday","Tuesday","Wednesday","Thursday","Friday") ~ "Weekday",
-        Day %in% c("Saturday","Sunday") ~ "Weekend"
-      ) #add a variable to represent whether the day is weekend or weekday.
-  )%>%
-  transform(
-    Week = as.factor(Week),
-    Day = as.factor(Day),
-    Weekday_or_Weekend = as.factor(Weekday_or_Weekend),
-    Day_Number = as.factor(Day_Number)
-  ) #convert some variables to factor for future plotting.
+path_con = 
+  str_c("./data/", list.files("data", pattern = "con"))
+
+path_exp = 
+  str_c("./data/", list.files("data", pattern = "exp"))
+
+long_data = 
+  tibble(
+    control = map(path_con, ~read_csv(path_con)),
+    experiment = map(path_exp, ~read_csv(path_exp))
+  )
 ```
 
-We have a data set which contains the measure of accelerometers for a 63 years-old male with BMI 25, with a time period of 5 weeks. After cleaning the data, we have `r nrow(accel)` rows and `r ncol(accel)` columns, which means we have a total number of `r nrow(accel)` measures and `r ncol(accel)` variables to describe the data. 
-
-These variables are:
-  
-  * Week: shows the week number, ranging from 1 to 5 (ex."1" means week one).
-  * Day_number: shows the day number, scale from 1 to 35 (ex."1" means day one).
-  * Day: shows what day at that day number, scale from "Monday" to "Sunday", 7 in total.
-  * Activity_Minute: shows the exact minute while taking the measurement at that day number, ranging from 1 to 1440 (since one day has 1440 minutes in total).
-  * Measures: contains values of each measurement, and value "1" means no reading.  
-  * Weekday_or_Weekend: represent weekday or weekend of that specific day number.
-
-"Week", "Day", "Day_Number",and "Weekday_or_Weekend" have been converted to factor.
 
 ### Table of Daily Activity
 
