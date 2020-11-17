@@ -116,7 +116,7 @@ results %>%
 
 ### Import Data Sets with Iteration
 
-```{r}
+```{r, warning= FALSE, message=FALSE}
 #store file paths of the control data sets
 path_con = 
   str_c("./data/", list.files("data", pattern = "con"))
@@ -140,14 +140,14 @@ path_exp =
 
 long_data = 
   tibble(
-    control = map(path_con, ~read_csv(path_con)),
-    experiment = map(path_exp, ~read_csv(path_exp))
+    control = map(path_con, read_csv),
+    experiment = map(path_exp, read_csv)
   )
 ```
 
 ### Make the Data Tidy
 
-```{r}
+```{r, message=FALSE}
 #make it tidy
 long_data_tidy = 
   long_data %>%
