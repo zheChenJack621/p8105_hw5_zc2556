@@ -33,191 +33,152 @@ scale_fill_discrete = scale_fill_viridis_d
 
 ```
 
-### Basic Description of the Data Set
+### Import and Clean the Data Set
 
 ```{r}
 #read in the dataset
 homoicide = 
-  read_csv("./homicide-data.csv")
-```
-
-The data contains `r nrow(instacart)` rows and `r ncol(instacart)` columns. Each observations are assigned with the number of items and user ID. We have information about order/order ID, days and hours. Also, we have item information, like name, aisle, department and codes.
-
-
-### Answering Questions
-
-#### Aisles
-
-```{r}
-#count for the number of aisles and find the most popular aisle
-instacart %>%
-  count(aisle) %>%
-  arrange(desc(n))
-```
-We can see there are 134 different aisles and "fresh vegetables" has the most items.
-
-#### Plot
-
-```{r}
-instacart %>%
-  count(aisle) %>%
-  filter(n > 10000) %>%
+  read_csv("./homicide-data.csv") %>%
+  #redefine the arrest status
   mutate(
-    aisle = factor(aisle),
-    aisle = fct_reorder(aisle, n) #rearrange the frame
+    city_state = str_c(city, state, sep = "_"),
+    resolved = case_when(
+      disposition == "Closed without arrest" ~ "unsolved",
+      disposition == "Open/No arrest"        ~ "unsolved",
+      disposition == "Closed by arrest"      ~ "solved"
+    )
   ) %>%
-  ggplot(aes(x = aisle, y = n))+
-  geom_point()+
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+  select(
+    city_state,resolved
+  ) %>%
+  filter(city_state != "Tulsa_AL")
 ```
 
-#### Make a Table of Targeted Aisles
+Check the data set
 
 ```{r}
-instacart %>%
-  filter( aisle %in% c("baking ingredients", "dog food care","packaged vegetables fruits"))%>%
-  group_by(aisle)%>%
-  count(product_name)%>%
-  mutate(
-    rank = min_rank(desc(n))
-  )%>%
-  filter(rank < 4) %>%
-  arrange(aisle, rank)%>%
-  knitr::kable()
-```
-
-#### Make a Table Showing the Mean Hour of the Day between "Apples" and "Ice Cream"
-
-```{r}
-instacart %>%
-  filter(product_name %in% c("Pink Lady Apples", "Coffee Ice Cream")) %>%
-  group_by(product_name, order_dow)%>%
-  summarise(mean_hour = mean(order_hour_of_day))%>%
-  pivot_wider(
-    names_from = order_dow,
-    values_from = mean_hour
+#give a tidy data frame including the solved/unsolved cases 
+aggregate_homo = 
+  homoicide %>%
+  group_by(city_state) %>%
+  summarize(
+    hom_total = n(),
+    hom_unsolved = sum(resolved == "unsolved")
   )
+aggregate_homo
+```
+
+Prop test for a single city
+
+```{r}
+prop.test(
+  aggregate_homo %>% filter(city_state == "Baltimore_MD") %>% pull(hom_unsolved),
+  aggregate_homo %>% filter(city_state == "Baltimore_MD") %>% pull(hom_total)
+  ) %>%
+  broom::tidy() #make it exhibit in one row
+  
+```
+
+Iterate
+
+```{r}
+#using map to give prop tests of each city state
+results =
+  aggregate_homo %>%
+  mutate(
+    prop_test = map2(.x = hom_unsolved, .y = hom_total, ~prop.test(x = .x, n = .y)),
+    tidy_test = map(.x = prop_test, ~broom::tidy(.x))
+  ) %>%
+  select(
+    -prop_test
+  ) %>%
+  unnest(tidy_test) %>%
+  select(
+    city_state, estimate, conf.low, conf.high
+  )
+results
+```
+
+Plot
+
+```{r}
+results %>%
+  mutate(city_state = fct_reorder(city_state, estimate)) %>%
+  ggplot(aes(x = city_state, y = estimate)) +
+  geom_point()+
+  geom_errorbar(ymin = results$conf.low, ymax = results$conf.high)+
+  theme(axis.text = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
 ```
 
 
 ## Problem 2
 
-### Import and Clean the Data
+### Import Data Sets with Iteration
 
 ```{r}
-accel =
-  read.csv("./accel_data.csv")%>% #import data 
-  pivot_longer(
-    activity.1:activity.1440,
-    values_to = "Measures",
-    names_to = "Activity_Minute",
-    names_prefix = "activity."
-  )%>% # merging vairables
-  rename(
-    Day = day,
-    Week = week,
-    Day_Number = day_id
-  )%>% # change to more reasonable vairable names.
+#store file paths of the control data sets
+path_con = 
+  str_c("./data/", list.files("data", pattern = "con"))
+
+#store file paths of the experiment data sets 
+path_exp = 
+  str_c("./data/", list.files("data", pattern = "exp"))
+
+#import both controls and experiments into a single data set
+long_data = 
+  tibble(
+    control = map(path_con, read_csv),
+    experiment = map(path_exp, read_csv)
+  )
+
+```
+
+
+### Make the Data Tidy
+
+```{r}
+#make it tidy
+long_data_tidy = 
+  long_data %>%
   mutate(
-    Weekday_or_Weekend =
-      case_when(
-        Day %in% c("Monday","Tuesday","Wednesday","Thursday","Friday") ~ "Weekday",
-        Day %in% c("Saturday","Sunday") ~ "Weekend"
-      ) #add a variable to represent whether the day is weekend or weekday.
-  )%>%
-  transform(
-    Week = as.factor(Week),
-    Day = as.factor(Day),
-    Weekday_or_Weekend = as.factor(Weekday_or_Weekend),
-    Day_Number = as.factor(Day_Number)
-  ) #convert some variables to factor for future plotting.
+    subject_id = 1:10
+  ) %>%
+  pivot_longer(
+    control:experiment,
+    names_to = "arm"
+  ) %>%
+  unnest() %>%
+  pivot_longer(
+    week_1:week_8,
+    names_to = "week",
+    names_prefix = "week_",
+    values_to = "observations"
+  )
+
+long_data_tidy
 ```
 
-We have a data set which contains the measure of accelerometers for a 63 years-old male with BMI 25, with a time period of 5 weeks. After cleaning the data, we have `r nrow(accel)` rows and `r ncol(accel)` columns, which means we have a total number of `r nrow(accel)` measures and `r ncol(accel)` variables to describe the data. 
-
-These variables are:
-  
-  * Week: shows the week number, ranging from 1 to 5 (ex."1" means week one).
-  * Day_number: shows the day number, scale from 1 to 35 (ex."1" means day one).
-  * Day: shows what day at that day number, scale from "Monday" to "Sunday", 7 in total.
-  * Activity_Minute: shows the exact minute while taking the measurement at that day number, ranging from 1 to 1440 (since one day has 1440 minutes in total).
-  * Measures: contains values of each measurement, and value "1" means no reading.  
-  * Weekday_or_Weekend: represent weekday or weekend of that specific day number.
-
-"Week", "Day", "Day_Number",and "Weekday_or_Weekend" have been converted to factor.
-
-### Table of Daily Activity
-
-```{r}
-dy_ac = 
-  accel %>%
-    group_by(
-      Week, Day_Number, Day 
-    )%>%
-    summarise(
-      Daily_Activity = sum(Measures)
-    )
-dy_ac
-
-```
-We aggregate the measurements by day number and make a table to see patient's daily activity of the accelerometers. Without visualization, it is hard to observe any trends only with this table. However, we can have some specific and descriptive information. Among 35 days, the daily measurement ranges in between 1440 and 631105;
-the mean of the daily activity is `r mean(dy_ac$Daily_Activity)` and the median is `r median(dy_ac$Daily_Activity)`. From the median and mean, we may say the data distribute quite evenly, not too skewed. The standard deviation is `r sd(dy_ac$Daily_Activity)`, showing that the data is quite spread. 
-  
 ### Plot
 
 ```{r}
-accel_hr =
-  accel%>%
-    mutate(
-      Hour = 
-        case_when(
-          Activity_Minute%in% c(1:60) ~ 1,
-          Activity_Minute%in% c(61:120) ~ 2,
-          Activity_Minute%in% c(121:180) ~ 3,
-          Activity_Minute%in% c(181:240) ~ 4,
-          Activity_Minute%in% c(241:300) ~ 5,
-          Activity_Minute%in% c(301:360) ~ 6,
-          Activity_Minute%in% c(361:420) ~ 7,
-          Activity_Minute%in% c(421:480) ~ 8,
-          Activity_Minute%in% c(481:540) ~ 9,
-          Activity_Minute%in% c(541:600) ~ 10,
-          Activity_Minute%in% c(601:660) ~ 11,
-          Activity_Minute%in% c(661:720) ~ 12,
-          Activity_Minute%in% c(721:780) ~ 13,
-          Activity_Minute%in% c(781:840) ~ 14,
-          Activity_Minute%in% c(841:900) ~ 15,
-          Activity_Minute%in% c(901:960) ~ 16,
-          Activity_Minute%in% c(961:1020) ~ 17,
-          Activity_Minute%in% c(1021:1080) ~ 18,
-          Activity_Minute%in% c(1081:1140) ~ 19,
-          Activity_Minute%in% c(1141:1200) ~ 20,
-          Activity_Minute%in% c(1201:1260) ~ 21,
-          Activity_Minute%in% c(1261:1320) ~ 22,
-          Activity_Minute%in% c(1321:1380) ~ 23,
-          Activity_Minute%in% c(1381:1440) ~ 24,
-        )
-    )%>%
-  group_by(Week, Day_Number, Day, Hour)%>%
-  summarise(
-    hour_activity = sum(Measures),
-  ) #calculate the hour activity
-  
-
-accel_hr%>%
-  group_by(Day,Hour)%>%
-  summarise(
-    mean_hour_activity = mean(hour_activity)
-  )%>%
-  ggplot(aes(x = Hour, y = mean_hour_activity, color = Day))+
-  geom_line(alpha = 10)+
+long_data_tidy %>%
+  mutate(subject_id = as.factor(subject_id),
+         week = as.factor(week)
+         ) %>%
+  ggplot(aes(x = week, y = observations, group = subject_id, color = subject_id)) +
+  geom_path()+
+  facet_grid(~arm) +
   labs(
-    title = "24-Hour Activity", 
-    y = "Weekly Average Hourly Activity", 
-    x = "Time(in hours)",
-    caption = "Data from P8105") +
-  scale_x_continuous(breaks = accel_hr$Hour)
+    title = "Observations over 8 Weeks by Treatment Groups",
+    x = "Week",
+    y = "Observations"
+  ) + 
+  theme(legend.position = "bottom")
+  
 ```
-Since we have many lines, which is difficult to observe the trend, we decided to make plot based on the average hourly activity. From the plot above, we can clearly observe this patient has a strong preference of doing activity at evening, especially Friday evening. Also, the patient has a habit of doing activity at Saturday morning and noon. The patient usually sleeps at 11pm and gets up at about 5:30.
+
+We made a spaghetti plot to show the observations on each subject over time to compare the effect of the treatment. In control group, we don't observe a strong trend and the change of observations for 8 weeks seems to be random. However, for the experiment group, we can observe a clearly increasing tread, showing the treatment should have some effect compared to the control.   
 
 
 ## Problem 3
