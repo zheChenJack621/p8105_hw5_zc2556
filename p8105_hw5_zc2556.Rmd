@@ -36,7 +36,9 @@ scale_fill_discrete = scale_fill_viridis_d
 ### Basic Description of the Data Set
 
 ```{r}
-data("instacart")
+#read in the dataset
+homoicide = 
+  read_csv("./homicide-data.csv")
 ```
 
 The data contains `r nrow(instacart)` rows and `r ncol(instacart)` columns. Each observations are assigned with the number of items and user ID. We have information about order/order ID, days and hours. Also, we have item information, like name, aisle, department and codes.
