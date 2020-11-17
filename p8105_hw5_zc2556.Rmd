@@ -132,8 +132,18 @@ long_data =
     experiment = map(path_exp, read_csv)
   )
 
-```
+path_con = 
+  str_c("./data/", list.files("data", pattern = "con"))
 
+path_exp = 
+  str_c("./data/", list.files("data", pattern = "exp"))
+
+long_data = 
+  tibble(
+    control = map(path_con, ~read_csv(path_con)),
+    experiment = map(path_exp, ~read_csv(path_exp))
+  )
+```
 
 ### Make the Data Tidy
 
@@ -184,129 +194,3 @@ We made a spaghetti plot to show the observations on each subject over time to c
 ## Problem 3
 
 ### Import and Clean the Data
-
-```{r}
-data("ny_noaa")
-
-noaa = ny_noaa %>%
-  janitor::clean_names()
-```
-
-We now take a glance of the data set "ny_noaa".This data set contains `r nrow(noaa)` observations and `r ncol(noaa)` variables. These variables are:
-
-* tmax and tmin: the maximum and minimum temperature of the station, in tenths of degrees C.
-* prcp: precipitation, in tenths of mm.
-* snow: snowfall, in mm.
-* snwd: snow depth, also in mm.
-* id: ID of weather stations.
-
-Since we notice that there are many missing values in our data set, we will give the specific extend of the missing data in variables:
-
-* prcp: `r sum(is.na(noaa$prcp))/2595176`
-* snow: `r sum(is.na(noaa$snow))/2595176`  
-* snwd: `r sum(is.na(noaa$snwd))/2595176`
-
-We suppose that the high proportion of missing values is because each station is responsible for collecting a subset of these variables.
-
-### Seperate Year, Month and Day
-
-```{r}
-noaa =
-  noaa%>%
-    separate(date, c("year", "month", "day"))
-noaa = 
-  noaa%>%
-    mutate(
-      prcp = as.numeric(prcp, na.rm =T )/10, 
-      tmax = as.numeric(tmax, na.rm =T )/10,
-      tmin = as.numeric(tmin, na.rm =T )/10,
-      month = month.abb[as.numeric(month)] #change month number to month names
-  )
-```
-
-Date of the data set has been separated into three variables and units are all converted to the standard units, rather than tenths units.
-
-### Find Commonly Observed Value for Snowfall
-
-```{r}
-noaa%>%
-  group_by(snow)%>%
-  summarise(n_obs = n())%>%
-  filter(min_rank(desc(n_obs))<5)
-```
-The most commonly observed value is 0 for the snowfall. It is kind of making sense since snowfall requires a special weathering condition and usually, it is hard to satify all conditions.
-
-### 2 Panel Plots for the Average Max Temperature in Jan and July
-
-```{r}
-noaa %>%
-  select(id, year, month, day, tmax, tmin) %>% 
-  filter( month ==  "Jan" | month == "Jul" ) %>% 
-  group_by(id, year, month) %>% 
-  summarise(
-    mean_tmax = mean(tmax, na.rm = T)) %>% #find the average max temperature.
-  filter(is.na(mean_tmax) == F)%>% #filter out the missing values 
-  ggplot(aes(x = year, y = mean_tmax )) + #plot
-  geom_point(aes(color = id)) +
-  labs(
-    title = "Max tempreture in January and July (1991-2010)", 
-    y = "Tempreture(degree of Celsius)", 
-    x = "Year",
-    caption = "Data from ny_noaa") +
-  scale_x_discrete(breaks = c(1981, 1985, 1990, 1995, 2000, 2005, 2010),
-                  labels = c("1981", "1985", "1990", "1995", "2000", "2005", "2010")) +
-  scale_y_discrete(breaks = c(-10, 0, 10, 20, 30),
-                     labels = c("-10°C", "0°C", "10°C", "20°C", "30°C"))+                   theme(legend.position = "none")+
-  facet_grid(~month)
-```
-First, we observe that max temperature in July is way higher than the max temperature in January. Such differences is because the data was collected in NY and July is summer in NY. Therefore, July's temperature is higher than January. 
-
-Second, although we don't see a obvious trend of changing temperature in July, we can observe there is a trend of increasing temperature in January. The max temperature has increased since January in 1981 until around 2000, and fortunately, the trend is getting flatten since 2005. 
-
-From the plot, we can clearly see some outliers in both plots, like January in 2005.
-
-### 2 Panel Plot for tmax vs tmin
-
-```{r}
-ggplot(noaa, aes(x = tmin, y = tmax)) +
-  geom_hex() +
-  labs(title = "Tempreture from 1981-2010", 
-       x = "Minimum tempreture(degree of Celsius)", 
-       y = "Maximum tempreture(degree of Celsius)") +
-  scale_y_continuous(breaks = c(-40, -20, 0, 20, 40, 60),
-                     labels = c("-40°C","-20°C"," 0°C", "20°C", "40°C", "60°C")) +
-  scale_x_continuous(breaks = c(-60, -30, 0, 30, 60),
-                     labels = c("-60°C", "-30°C", "0°C", "30°C", "60°C"))+
-  theme(legend.position = "right")
-```
-Since we have so many observations in our data set, we use hex plot to exhibit the relation between minimum temperature and the maximum temperature. In hex plot, each hexagon represents a certain amount of points and lighter region represents more points. From the plot, we can see the most common maximum and minimum temeperature for these years. 
-
-### Plot for Showing the Distribution of Snowfall
-
-```{r}
-noaa %>% 
-  filter(snow > 0 & snow < 100) %>% 
-  ggplot(aes(x = year, y = snow, fill = year)) + 
-  geom_boxplot(alpha = 0.5) +
-  labs(title = "Distribution of Snowfall between 0 and 100 by Year", 
-         x = "Snowfall (mm)", 
-         y = "Distribution",
-         caption = "Data from ny_noaa") +
-  scale_x_discrete(breaks = c(1981, 1986, 1991, 1996, 2000, 2005, 2010))
-```
-Plot above exhibits the distribution of snowing between 0 and 100 mm. From the plot, we may conclude that the distribution of snowfall is quite uniform, and there isn't an obvious trend for the snowfull. However, we should notice the existence of outliers. There are many outliers in 2006 and 2006's box was quite "small". We may conclude that if one year, snowfall's IQR decreases, people may need to be careful of the extreme snowing, like what happened in 2005 and 2010.  
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
