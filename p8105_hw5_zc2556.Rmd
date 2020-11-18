@@ -199,18 +199,15 @@ set.seed(621)
 n_ent = 30
 sigm_ent = 5
 
-#write function to find the estimated mean and p-value
+#function to find the estimated mean and p-value
 sim_mean_p = function(n, mu, sigm) {
-  
-  sim_data = tibble(
-    x = rnorm(n, mean = mu, sd = sigm),
-    t = broom::tidy(t.test(x))
-  )
-  sim_data %>%
-    summarize(
-      mu_hat = mean(x),
-      p_value =t %>% pull(p.value)
+  x = rnorm(n, mean = mu, sd = sigm)
+  t = broom::tidy(t.test(x))
+  fun_res = tibble(
+    mu_hat = t$estimate,
+    p_value = t$p.value
     )
+  return(fun_res)
 }
 
 ```
@@ -219,14 +216,88 @@ sim_mean_p = function(n, mu, sigm) {
 5000 for mu = 0
 
 ```{r}
-output_mu_0 = vector("list", 5000)
-
-for(i in 1:5000) {
-  output_mu_0[[i]] = sim_mean_p(n, 0, sigm)
+#function to stimulate for 5000 times 
+stimulate = function(mu) {
+  output_mu= vector("list", 5000)
+  for(i in 1:5000) {
+    output_mu[[i]] = sim_mean_p(n_ent, mu, sigm_ent)
+  }
+  sim_result = bind_rows(output_mu)
+  return(sim_result)
 }
 
-sim_result_0 = bind_rows(output_mu_0)
+#when mu = 0
+mu0 = stimulate(0)
+mu0
 ```
+
+Proportion of Rejecting the Null based on 0.05 alpha when mu = 0.
+
+```{r}
+#function to find the proportion of rejecting the null
+test = function(stimulate_data, true_mu) {
+  sim_reject = 
+    stimulate_data %>%
+      filter(p_value > 0.05) %>%
+      summarise(
+        prop_reject = n()/5000
+      )
+  mu =
+    tibble(
+      true_mu = true_mu
+    )
+  sim_reject = bind_cols(sim_reject, mu)
+  return(sim_reject)
+}
+
+#for mu = 0 
+test(mu0,0)
+```
+
+### Plot the Proportion of Reject VS True Mean
+
+Apply functions 
+```{r}
+#make a data frame including mu = 1-6
+for (i in 1:6) {
+  assign(paste0("mu", i), stimulate(i))
+}
+```
+
+Make a table for plotting
+```{r}
+#make a data frames including the proportion and true means
+mu_all = list(mu1,mu2,mu3,mu4,mu5,mu6)
+for (i in 1:6) {
+  assign(paste0("prop_table", i), test(as.data.frame(mu_all[i]),i))
+}
+prop_table = bind_rows(prop_table1, prop_table2, prop_table3, prop_table4, prop_table5, prop_table6)
+prop_table
+```
+
+Plot
+
+```{r}
+prop_table %>%
+  ggplot(aes(x = as.factor(true_mu), y = prop_reject, group  = 1)) +
+  geom_point() +
+  geom_line() +
+  labs(
+    title = "5000 Times of Stimulation for 6 Means",
+    x = "True Mean",
+    y = "Proportion of Rejection Times"
+  ) + 
+  theme(legend.position = "bottom")
+```
+
+
+
+
+
+
+
+
+
 
 
 
