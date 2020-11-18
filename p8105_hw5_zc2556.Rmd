@@ -193,4 +193,42 @@ We made a spaghetti plot to show the observations on each subject over time to c
 
 ## Problem 3
 
-### Import and Clean the Data
+```{r}
+#set up 
+set.seed(621)
+n_ent = 30
+sigm_ent = 5
+
+#write function to find the estimated mean and p-value
+sim_mean_p = function(n, mu, sigm) {
+  
+  sim_data = tibble(
+    x = rnorm(n, mean = mu, sd = sigm),
+    t = broom::tidy(t.test(x))
+  )
+  sim_data %>%
+    summarize(
+      mu_hat = mean(x),
+      p_value =t %>% pull(p.value)
+    )
+}
+
+```
+
+
+5000 for mu = 0
+
+```{r}
+output_mu_0 = vector("list", 5000)
+
+for(i in 1:5000) {
+  output_mu_0[[i]] = sim_mean_p(n, 0, sigm)
+}
+
+sim_result_0 = bind_rows(output_mu_0)
+```
+
+
+
+
+
